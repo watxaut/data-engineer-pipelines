@@ -1,0 +1,4 @@
+
+*.crc
+airflow/logs
+spark-warehouse/

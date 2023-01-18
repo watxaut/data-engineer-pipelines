@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: order_descriptors
+    database: delta
+    schema: central_order_descriptors_odp
+    tables:
+      - name: order_descriptors
+        columns:
+          - name: order_id
+            tests:
+              - not_null:
+                  where: "p_creation_month >= DATE('2022-11-01')"

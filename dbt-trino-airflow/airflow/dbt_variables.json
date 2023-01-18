@@ -1,0 +1,8 @@
+{
+    "DBT_HOST": "trino-coordinator",
+    "DBT_USER": "trino",
+    "DBT_PORT": "8081",
+    "DBT_DEFAULT_SCHEMA": "central_order_metrics_internal",
+    "DBT_HTTP_SCHEME": "http",
+    "DBT_TARGET": "local"
+}

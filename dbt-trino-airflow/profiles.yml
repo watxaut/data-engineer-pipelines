@@ -1,0 +1,79 @@
+# ideally profiles.yml will not be tracked and in ~/.dbt/profiles.yml instead, so everyone can configure it as
+# needed. Permissions to write to some pattern schemas in DEV and PROD will be needed.
+order_metrics:
+  target: production
+  outputs:
+    # WARN: the only profile that would be added with git would be DEV and PROD. All others should be added to
+    # ~/.dbt/profiles.yml
+    localhost: # locally it will use trino cluster running on localhost:8081
+      type: trino
+      method: none  # optional, one of {none | ldap | kerberos | oauth | jwt | certificate}
+      user: trino
+      password:
+      database: delta
+      host: localhost
+      port: 8081
+      schema: central_order_metrics_internal
+      threads: 4
+      retries: 3
+      http_scheme: http
+    local:  # locally it will use trino cluster running on trino-coordinator:8081
+      type: trino
+      method: none  # optional, one of {none | ldap | kerberos | oauth | jwt | certificate}
+      user: trino
+      password:
+      database: delta
+      host: trino-coordinator
+      port: 8081
+      schema:  central_order_metrics_internal
+      threads: 4
+      retries: 3
+      http_scheme: http
+    local-setup:  # used by table-setup container
+      type: trino
+      method: none
+      user: trino
+      password:
+      database: delta
+      host: trino-coordinator
+      port: 8081
+      schema: central_order_metrics_internal
+      threads: 4
+      retries: 3
+      http_scheme: http
+    development-sandbox:
+      type: trino
+      method: oauth  # optional, one of {none | ldap | kerberos | oauth | jwt | certificate}
+      user: some_email@domain.com
+      password:
+      database: delta
+      host: trino.host.com
+      port: 443
+      schema: central_order_descriptors_internal
+      threads: 4
+      retries: 3
+      http_scheme: https
+    production-sandbox:
+      type: trino
+      method: oauth  # optional, one of {none | ldap | kerberos | oauth | jwt | certificate}
+      user: some_email@domain.com
+      password:
+      database: delta
+      host: trino.host.com
+      port: 443
+      schema: central_sandbox_joan_heredia_order_metrics
+      threads: 4
+      retries: 3
+      http_scheme: https
+    production:
+      type: trino
+      method: "{{ env_var('DBT_AUTH') }}"  # optional, one of {none | ldap | kerberos | oauth | jwt | certificate}
+      user: "{{ env_var('DBT_USER') }}"  # here should be service account
+      password:
+      database: delta
+      host: "{{ env_var('DBT_HOST') }}"
+      port: "{{ env_var('DBT_PORT') | as_number }}"
+      schema: "{{ env_var('DBT_DEFAULT_SCHEMA') }}"
+      threads: 4
+      retries: 3
+      http_scheme: "{{ env_var('DBT_HTTP_SCHEME', 'https') }}"

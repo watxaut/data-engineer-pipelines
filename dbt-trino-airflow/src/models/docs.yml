@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: ref_order_metrics
+    description: Refinery model with order metrics
+    columns:
+      - name: p_creation_month
+      - name: num_orders
+
+  - name: order_metrics
+    description: ODP with order metrics
+    columns:
+      - name: p_creation_month
+      - name: num_orders

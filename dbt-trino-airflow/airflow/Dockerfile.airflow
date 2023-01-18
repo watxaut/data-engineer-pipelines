@@ -1,0 +1,4 @@
+# This way we can pass build time parameters to airflow default image w/out HELM and such
+FROM apache/airflow:2.4.0-python3.10 as base
+
+FROM base as deploy
