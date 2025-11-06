@@ -1,0 +1,62 @@
+{
+  "dashboard": {
+    "title": "Real-time Event Analytics",
+    "tags": ["flink", "streaming", "real-time"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Events Per Minute",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT toStartOfMinute(event_time) as time, count() as count FROM events WHERE event_time > now() - INTERVAL 1 HOUR GROUP BY time ORDER BY time"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Events by Type",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT event_type, count() as count FROM events WHERE event_time > now() - INTERVAL 1 HOUR GROUP BY event_type"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Total Revenue (Last Hour)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT sum(amount) FROM events WHERE event_type = 'purchase' AND event_time > now() - INTERVAL 1 HOUR"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Active Users (Last Hour)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 8},
+        "targets": [
+          {
+            "datasource": "ClickHouse",
+            "rawSql": "SELECT uniqExact(user_id) FROM events WHERE event_time > now() - INTERVAL 1 HOUR"
+          }
+        ]
+      }
+    ],
+    "refresh": "5s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    }
+  }
+}
