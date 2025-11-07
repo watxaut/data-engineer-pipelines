@@ -1,0 +1,13 @@
+reverse_etl:
+  outputs:
+    dev:
+      type: trino
+      method: none
+      host: "{{ env_var('TRINO_HOST', 'trino') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | int }}"
+      database: iceberg
+      schema: analytics
+      threads: 4
+      http_scheme: http
+  target: dev
+
