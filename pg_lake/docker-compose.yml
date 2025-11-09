@@ -73,15 +73,59 @@ services:
     networks:
       - reverse-etl-network
 
-  # PostgreSQL with pg_lake (built from source)
+  # pgduck_server - DuckDB wire protocol server (runs first)
+  pgduck-server:
+    build:
+      context: ./postgres-pglake
+      dockerfile: Dockerfile
+      target: pgduck_server
+      args:
+        - BASE_IMAGE_OS=almalinux
+        - BASE_IMAGE_TAG=9
+    container_name: pgduck-server
+    volumes:
+      - ./postgres-pglake/scripts/entrypoint-pgduck-server.sh:/entrypoint-pgduck-server.sh
+      - ./postgres-pglake/scripts/init-pgduck-server.sql:/init-pgduck-server.sql
+      - pgduck-unix-socket-volume:/home/postgres/pgduck_socket_dir
+      - pg-tmp-dir-volume:/tmp/pgsql_tmp
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_DEFAULT_REGION: us-east-1
+      S3_ENDPOINT: http://minio:9000
+    entrypoint: ["/entrypoint-pgduck-server.sh"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "psql", "-p", "5332", "-h", "/home/postgres/pgduck_socket_dir", "-c", "SELECT 1;"]
+      interval: 6s
+      timeout: 2s
+      start_period: 30s
+      retries: 5
+    cap_add:
+      - SYS_PTRACE
+    depends_on:
+      - minio
+    networks:
+      - reverse-etl-network
+
+  # PostgreSQL with pg_lake (communicates with pgduck-server via Unix socket)
   postgres-pglake:
     build:
       context: ./postgres-pglake
       dockerfile: Dockerfile
+      target: pg_lake_postgres
+      args:
+        - BASE_IMAGE_OS=almalinux
+        - BASE_IMAGE_TAG=9
     container_name: postgres-pglake
     ports:
       - "5432:5432"
-      - "5332:5332"  # pgduck_server
+    volumes:
+      - ./postgres-pglake/scripts/entrypoint-postgres.sh:/entrypoint-postgres.sh
+      - ./postgres-pglake/scripts/init-postgres.sql:/init-postgres.sql
+      - pgduck-unix-socket-volume:/home/postgres/pgduck_socket_dir
+      - pg-tmp-dir-volume:/tmp/pgsql_tmp
+      - postgres-data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -89,9 +133,20 @@ services:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       AWS_DEFAULT_REGION: us-east-1
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./init-scripts/pg_lake:/docker-entrypoint-initdb.d
+      S3_ENDPOINT: http://minio:9000
+    entrypoint: ["/entrypoint-postgres.sh"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "psql", "-U", "postgres", "-c", "SELECT 1;"]
+      interval: 6s
+      timeout: 2s
+      start_period: 30s
+      retries: 5
+    cap_add:
+      - SYS_PTRACE
+    depends_on:
+      pgduck-server:
+        condition: service_healthy
     networks:
       - reverse-etl-network
 
@@ -148,7 +203,7 @@ services:
       trino:
         condition: service_started
       postgres-pglake:
-        condition: service_started
+        condition: service_healthy
     command: >
       bash -c "
       airflow db init &&
@@ -182,6 +237,8 @@ volumes:
   postgres-data:
   airflow-postgres-data:
   airflow-logs:
+  pgduck-unix-socket-volume:
+  pg-tmp-dir-volume:
 
 networks:
   reverse-etl-network:
