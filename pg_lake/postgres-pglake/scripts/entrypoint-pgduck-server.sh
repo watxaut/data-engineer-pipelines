@@ -35,9 +35,9 @@ CREATE SECRET IF NOT EXISTS s3_minio (
 EOF
 
 # Start pgduck_server on Unix socket
-echo "pgduck_server starting on Unix socket at /home/postgres/pgduck_socket_dir"
+echo "pgduck_server starting on Unix socket at /tmp"
 exec pgduck_server \
     --init_file_path /tmp/pgduck_init.sql \
     --port 5332 \
-    --unix_socket_directory /home/postgres/pgduck_socket_dir
+    --unix_socket_directory /tmp
 

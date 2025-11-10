@@ -153,6 +153,10 @@ RUN useradd -m -d /var/lib/postgresql -s /bin/bash postgres && \
 # Stage 2: pgduck_server container
 FROM base AS pgduck_server
 
+# Copy entrypoint scripts
+COPY scripts/entrypoint-pgduck-server.sh /entrypoint-pgduck-server.sh
+RUN chmod +x /entrypoint-pgduck-server.sh
+
 USER postgres
 WORKDIR /home/postgres
 
@@ -168,6 +172,11 @@ CMD ["/bin/bash"]
 # Stage 3: PostgreSQL with pg_lake container
 FROM base AS pg_lake_postgres
 
+# Copy entrypoint scripts
+COPY scripts/entrypoint-postgres.sh /entrypoint-postgres.sh
+COPY scripts/init-postgres.sql /init-postgres.sql
+RUN chmod +x /entrypoint-postgres.sh
+
 USER postgres
 WORKDIR /home/postgres
 
@@ -175,6 +184,7 @@ WORKDIR /home/postgres
 ENV POSTGRES_USER=postgres
 ENV POSTGRES_DB=postgres
 ENV PGDATA=/var/lib/postgresql/data
+ENV LD_LIBRARY_PATH=/usr/local/pgsql/lib:/usr/local/lib
 
 EXPOSE 5432
 

@@ -1,10 +1,10 @@
+-- We need to add the location because else dbt adds the __dbt_tmp to the folder
 {{
     config(
         materialized='table',
-        format='PARQUET',
-        location='s3://warehouse/analytics/popular_customizations_per_customer',
         properties={
-            "format": "'PARQUET'"
+            "format": "'PARQUET'",
+            "location": "'s3://warehouse/analytics/popular_customizations_per_customer'"
         }
     )
 }}

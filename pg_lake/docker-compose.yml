@@ -86,8 +86,7 @@ services:
     volumes:
       - ./postgres-pglake/scripts/entrypoint-pgduck-server.sh:/entrypoint-pgduck-server.sh
       - ./postgres-pglake/scripts/init-pgduck-server.sql:/init-pgduck-server.sql
-      - pgduck-unix-socket-volume:/home/postgres/pgduck_socket_dir
-      - pg-tmp-dir-volume:/tmp/pgsql_tmp
+      - pgduck-unix-socket-volume:/tmp
     environment:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
@@ -96,7 +95,7 @@ services:
     entrypoint: ["/entrypoint-pgduck-server.sh"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "psql", "-p", "5332", "-h", "/home/postgres/pgduck_socket_dir", "-c", "SELECT 1;"]
+      test: ["CMD", "psql", "-p", "5332", "-h", "/tmp", "-c", "SELECT 1;"]
       interval: 6s
       timeout: 2s
       start_period: 30s
@@ -123,8 +122,7 @@ services:
     volumes:
       - ./postgres-pglake/scripts/entrypoint-postgres.sh:/entrypoint-postgres.sh
       - ./postgres-pglake/scripts/init-postgres.sql:/init-postgres.sql
-      - pgduck-unix-socket-volume:/home/postgres/pgduck_socket_dir
-      - pg-tmp-dir-volume:/tmp/pgsql_tmp
+      - pgduck-unix-socket-volume:/tmp
       - postgres-data:/var/lib/postgresql/data
     environment:
       POSTGRES_USER: postgres
@@ -206,8 +204,16 @@ services:
         condition: service_healthy
     command: >
       bash -c "
-      airflow db init &&
-      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin &&
+      airflow db migrate &&
+      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin || true &&
+      airflow connections delete postgres_pglake || true &&
+      airflow connections add postgres_pglake \
+        --conn-type postgres \
+        --conn-host postgres-pglake \
+        --conn-schema analytics \
+        --conn-login postgres \
+        --conn-password postgres \
+        --conn-port 5432 &&
       airflow webserver & airflow scheduler
       "
     networks:

@@ -53,15 +53,25 @@ verify_trino = BashOperator(
 verify_postgres = BashOperator(
     task_id='verify_postgres_connection',
     bash_command='''
+    echo "Verifying PostgreSQL connection..."
+    echo "Host: ${POSTGRES_HOST}"
+    echo "Port: ${POSTGRES_PORT}"
+    echo "User: ${POSTGRES_USER}"
+    echo "Database: ${POSTGRES_DB}"
+    
     for i in {1..30}; do
-        if PGPASSWORD=${POSTGRES_PASSWORD} psql -h ${POSTGRES_HOST} -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "SELECT 1" > /dev/null 2>&1; then
-            echo "PostgreSQL is ready!"
+        if PGPASSWORD=${POSTGRES_PASSWORD} psql -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "SELECT 1" > /dev/null 2>&1; then
+            echo "✅ PostgreSQL is ready!"
             exit 0
         fi
-        echo "Waiting for PostgreSQL... attempt $i/30"
+        echo "⏳ Waiting for PostgreSQL... attempt $i/30"
+        if [ $i -eq 30 ]; then
+            echo "❌ PostgreSQL did not become ready after 30 attempts"
+            echo "Attempting to show connection error:"
+            PGPASSWORD=${POSTGRES_PASSWORD} psql -h ${POSTGRES_HOST} -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c "SELECT 1"
+        fi
         sleep 10
     done
-    echo "PostgreSQL did not become ready"
     exit 1
     ''',
     dag=dag,
@@ -70,24 +80,18 @@ verify_postgres = BashOperator(
 # Task 3: Run dbt deps
 dbt_deps = BashOperator(
     task_id='dbt_deps',
-    bash_command='cd /opt/airflow/dbt && dbt deps --profiles-dir .',
-    env={
-        'DBT_PROFILES_DIR': '/opt/airflow/dbt',
-        'TRINO_HOST': os.getenv('TRINO_HOST', 'trino'),
-        'TRINO_PORT': os.getenv('TRINO_PORT', '8080'),
-    },
+    bash_command='''
+    cd /opt/airflow/dbt && dbt deps --profiles-dir .
+    ''',
     dag=dag,
 )
 
 # Task 4: Run dbt debug (optional, for troubleshooting)
 dbt_debug = BashOperator(
     task_id='dbt_debug',
-    bash_command='cd /opt/airflow/dbt && dbt debug --profiles-dir .',
-    env={
-        'DBT_PROFILES_DIR': '/opt/airflow/dbt',
-        'TRINO_HOST': os.getenv('TRINO_HOST', 'trino'),
-        'TRINO_PORT': os.getenv('TRINO_PORT', '8080'),
-    },
+    bash_command='''
+    cd /opt/airflow/dbt && dbt debug --profiles-dir .
+    ''',
     dag=dag,
 )
 
@@ -122,12 +126,10 @@ EOF
 # Task 6: Run dbt models
 dbt_run = BashOperator(
     task_id='dbt_run',
-    bash_command='cd /opt/airflow/dbt && dbt run --profiles-dir . --full-refresh',
-    env={
-        'DBT_PROFILES_DIR': '/opt/airflow/dbt',
-        'TRINO_HOST': os.getenv('TRINO_HOST', 'trino'),
-        'TRINO_PORT': os.getenv('TRINO_PORT', '8080'),
-    },
+    bash_command='''
+    export DBT_PROFILES_DIR=/opt/airflow/dbt
+    cd /opt/airflow/dbt && dbt run --profiles-dir . --full-refresh
+    ''',
     dag=dag,
 )
 
@@ -173,8 +175,12 @@ drop_postgres_tables = PostgresOperator(
     task_id='drop_postgres_tables',
     postgres_conn_id='postgres_pglake',
     sql='''
+    -- Drop regular tables
     DROP TABLE IF EXISTS popular_customizations_per_customer CASCADE;
     DROP TABLE IF EXISTS popular_customizations_per_product CASCADE;
+
+    DROP FOREIGN TABLE IF EXISTS iceberg.popular_customizations_per_customer CASCADE;
+    DROP FOREIGN TABLE IF EXISTS iceberg.popular_customizations_per_product CASCADE;    
     ''',
     dag=dag,
 )
@@ -183,21 +189,18 @@ drop_postgres_tables = PostgresOperator(
 copy_customer_customizations = PostgresOperator(
     task_id='copy_customer_customizations_to_postgres',
     postgres_conn_id='postgres_pglake',
-    sql='''
-    -- Create table and copy from S3 parquet files
-    CREATE TABLE popular_customizations_per_customer (
-        customer_id BIGINT,
-        product_id BIGINT,
-        customization INTEGER,
-        customization_count BIGINT
-    );
+    sql='''    
+    -- Create schema for foreign tables
+    CREATE SCHEMA IF NOT EXISTS iceberg;
     
-    -- Copy data from S3
-    COPY popular_customizations_per_customer 
-    FROM 's3://warehouse/analytics/popular_customizations_per_customer/*.parquet'
-    WITH (format 'parquet');
+    CREATE FOREIGN TABLE iceberg.popular_customizations_per_customer () SERVER pg_lake
+     OPTIONS (path 's3://warehouse/analytics/popular_customizations_per_customer/data/*.parquet');
+
+    -- Create local table with data from foreign table
+    CREATE TABLE popular_customizations_per_customer AS
+    SELECT * FROM iceberg.popular_customizations_per_customer;
     
-    -- Create indexes
+    -- Create indexes on the local table
     CREATE INDEX idx_customer_customizations_customer_id 
         ON popular_customizations_per_customer(customer_id);
     
@@ -212,19 +215,16 @@ copy_product_customizations = PostgresOperator(
     task_id='copy_product_customizations_to_postgres',
     postgres_conn_id='postgres_pglake',
     sql='''
-    -- Create table and copy from S3 parquet files
-    CREATE TABLE popular_customizations_per_product (
-        product_id BIGINT,
-        customization INTEGER,
-        customization_count BIGINT
-    );
+    CREATE SCHEMA IF NOT EXISTS iceberg;
+
+    CREATE FOREIGN TABLE iceberg.popular_customizations_per_product () SERVER pg_lake
+     OPTIONS (path 's3://warehouse/analytics/popular_customizations_per_product/data/*.parquet');
     
-    -- Copy data from S3
-    COPY popular_customizations_per_product 
-    FROM 's3://warehouse/analytics/popular_customizations_per_product/*.parquet'
-    WITH (format 'parquet');
+    -- Create local table with data from foreign table
+    CREATE TABLE popular_customizations_per_product AS
+    SELECT * FROM iceberg.popular_customizations_per_product;
     
-    -- Create index
+    -- Create index on the local table
     CREATE INDEX idx_product_customizations_product_id 
         ON popular_customizations_per_product(product_id);
     ''',

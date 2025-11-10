@@ -3,8 +3,17 @@ set -e
 
 echo "Starting PostgreSQL with pg_lake..."
 
+# Ensure library paths are set
+export LD_LIBRARY_PATH=/usr/local/pgsql/lib:/usr/local/lib:${LD_LIBRARY_PATH:-}
+ldconfig 2>/dev/null || true
+
+# Debug: Check if libraries exist
+echo "Checking for pg_lake libraries..."
+ls -la /usr/local/pgsql/lib/pg_extension_base.so || echo "ERROR: pg_extension_base.so not found!"
+ls -la /usr/local/pgsql/lib/libduckdb.so || echo "ERROR: libduckdb.so not found!"
+
 # Wait for pgduck_server socket to be available
-SOCKET_PATH="/home/postgres/pgduck_socket_dir/.s.PGSQL.5332"
+SOCKET_PATH="/tmp/.s.PGSQL.5332"
 echo "Waiting for pgduck_server socket at $SOCKET_PATH..."
 for i in {1..30}; do
     if [ -S "$SOCKET_PATH" ]; then
@@ -39,6 +48,12 @@ fi
 # Start PostgreSQL
 echo "Starting PostgreSQL server..."
 pg_ctl -D "$PGDATA" -o "-c listen_addresses='*'" -w start
+
+# Set postgres user password
+echo "Setting postgres user password..."
+psql -v ON_ERROR_STOP=1 --username "${POSTGRES_USER}" <<-EOSQL
+    ALTER USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}';
+EOSQL
 
 # Create database and extensions
 echo "Setting up database and extensions..."

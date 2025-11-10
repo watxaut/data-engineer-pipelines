@@ -1,10 +1,9 @@
 {{
     config(
         materialized='table',
-        format='PARQUET',
-        location='s3://warehouse/analytics/popular_customizations_per_product',
         properties={
-            "format": "'PARQUET'"
+            "format": "'PARQUET'",
+            "location": "'s3://warehouse/analytics/popular_customizations_per_product'"
         }
     )
 }}
