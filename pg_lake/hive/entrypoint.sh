@@ -1,12 +1,15 @@
 #!/bin/bash
-export JAVA_HOME=/opt/java/openjdk
-export HADOOP_HOME=/opt/hadoop-3.3.1
-export HADOOP_CLASSPATH=${HADOOP_HOME}/share/hadoop/tools/lib/*
-export HIVE_HOME=/opt/apache-hive-metastore-3.1.3-bin
+set -e
+
+# Set environment variables for apache/hive:4.0.0 image
+export HIVE_HOME=/opt/hive
+export HADOOP_HOME=/opt/hadoop
 
 # Set S3 configuration for Hadoop
 export HADOOP_OPTS="-Dfs.s3a.access.key=minioadmin -Dfs.s3a.secret.key=minioadmin -Dfs.s3a.endpoint=http://minio:9000 -Dfs.s3a.path.style.access=true"
 
-${HIVE_HOME}/bin/schematool -initSchema -dbType mysql
-${HIVE_HOME}/bin/start-metastore
+# Initialize schema if needed (will skip if already initialized)
+${HIVE_HOME}/bin/schematool -dbType mysql -initSchema || echo "Schema already initialized or init failed, continuing..."
 
+# Start metastore service
+exec ${HIVE_HOME}/bin/hive --service metastore
