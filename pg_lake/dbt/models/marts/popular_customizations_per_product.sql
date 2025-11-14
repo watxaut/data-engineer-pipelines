@@ -10,7 +10,8 @@
     )
 }}
 
--- TODO: you will need to manually drop the S3 location for it to work twice due to external_location existing
+-- you will need to manually drop the S3 location for it to work twice due to external_location existing
+-- this is why there is a task in the DAG to manually delete this folder before running dbt
 -- Popular customizations per product
 -- Aggregation at product level and customization level
 WITH unnested_customizations AS (

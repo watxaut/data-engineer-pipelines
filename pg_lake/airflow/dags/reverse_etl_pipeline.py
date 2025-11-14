@@ -95,7 +95,64 @@ dbt_debug = BashOperator(
     dag=dag,
 )
 
-# Task 5: Create analytics schema in Trino
+# Task 5: Delete S3 analytics paths before dbt run
+delete_s3_analytics = BashOperator(
+    task_id='delete_s3_analytics_paths',
+    bash_command='''
+    python3 << EOF
+import boto3
+from botocore.client import Config
+import os
+
+# Configure boto3 for MinIO
+s3_client = boto3.client(
+    's3',
+    endpoint_url=os.environ['MINIO_ENDPOINT'],
+    aws_access_key_id=os.environ['MINIO_ACCESS_KEY'],
+    aws_secret_access_key=os.environ['MINIO_SECRET_KEY'],
+    config=Config(signature_version='s3v4'),
+    region_name='us-east-1'
+)
+
+bucket = 'warehouse'
+paths_to_delete = [
+    'hive/analytics/popular_customizations_per_customer',
+    'hive/analytics/popular_customizations_per_product',
+    'hive/analytics/popular_customizations_per_customer__dbt_tmp',
+    'hive/analytics/popular_customizations_per_product__dbt_tmp'
+]
+
+print("Deleting S3 paths in MinIO...")
+
+for path in paths_to_delete:
+    print(f"Deleting s3://{bucket}/{path}/")
+    try:
+        # List all objects with the prefix
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=path + '/')
+
+        objects_deleted = 0
+        for page in pages:
+            if 'Contents' in page:
+                objects_to_delete = [{'Key': obj['Key']} for obj in page['Contents']]
+                if objects_to_delete:
+                    s3_client.delete_objects(
+                        Bucket=bucket,
+                        Delete={'Objects': objects_to_delete}
+                    )
+                    objects_deleted += len(objects_to_delete)
+
+        print(f"  Deleted {objects_deleted} objects from s3://{bucket}/{path}/")
+    except Exception as e:
+        print(f"  Note: {e}")
+
+print("✅ S3 analytics paths deleted successfully!")
+EOF
+    ''',
+    dag=dag,
+)
+
+# Task 6: Create analytics schema in Trino
 create_analytics_schema = BashOperator(
     task_id='create_analytics_schema',
     bash_command='''
@@ -123,7 +180,7 @@ EOF
     dag=dag,
 )
 
-# Task 6: Run dbt models
+# Task 7: Run dbt models
 dbt_run = BashOperator(
     task_id='dbt_run',
     bash_command='''
@@ -133,7 +190,7 @@ dbt_run = BashOperator(
     dag=dag,
 )
 
-# Task 7: Verify dbt results
+# Task 8: Verify dbt results
 verify_dbt_results = BashOperator(
     task_id='verify_dbt_results',
     bash_command='''
@@ -170,7 +227,7 @@ EOF
     dag=dag,
 )
 
-# Task 8: Drop existing tables in PostgreSQL (if any)
+# Task 9: Drop existing tables in PostgreSQL (if any)
 drop_postgres_tables = PostgresOperator(
     task_id='drop_postgres_tables',
     postgres_conn_id='postgres_pglake',
@@ -180,12 +237,12 @@ drop_postgres_tables = PostgresOperator(
     DROP TABLE IF EXISTS popular_customizations_per_product CASCADE;
 
     DROP FOREIGN TABLE IF EXISTS iceberg.popular_customizations_per_customer CASCADE;
-    DROP FOREIGN TABLE IF EXISTS iceberg.popular_customizations_per_product CASCADE;    
+    DROP FOREIGN TABLE IF EXISTS iceberg.popular_customizations_per_product CASCADE;
     ''',
     dag=dag,
 )
 
-# Task 9: Copy popular_customizations_per_customer from S3 to PostgreSQL
+# Task 10: Copy popular_customizations_per_customer from S3 to PostgreSQL
 copy_customer_customizations = PostgresOperator(
     task_id='copy_customer_customizations_to_postgres',
     postgres_conn_id='postgres_pglake',
@@ -210,7 +267,7 @@ copy_customer_customizations = PostgresOperator(
     dag=dag,
 )
 
-# Task 10: Copy popular_customizations_per_product from S3 to PostgreSQL
+# Task 11: Copy popular_customizations_per_product from S3 to PostgreSQL
 copy_product_customizations = PostgresOperator(
     task_id='copy_product_customizations_to_postgres',
     postgres_conn_id='postgres_pglake',
@@ -219,19 +276,19 @@ copy_product_customizations = PostgresOperator(
 
     CREATE FOREIGN TABLE iceberg.popular_customizations_per_product () SERVER pg_lake
      OPTIONS (path 's3://warehouse/hive/analytics/popular_customizations_per_product/*', format 'parquet');
-    
+
     -- Create local table with data from foreign table
     CREATE TABLE popular_customizations_per_product AS
     SELECT * FROM iceberg.popular_customizations_per_product;
-    
+
     -- Create index on the local table
-    CREATE INDEX idx_product_customizations_product_id 
+    CREATE INDEX idx_product_customizations_product_id
         ON popular_customizations_per_product(product_id);
     ''',
     dag=dag,
 )
 
-# Task 11: Verify PostgreSQL data
+# Task 12: Verify PostgreSQL data
 verify_postgres_data = BashOperator(
     task_id='verify_postgres_data',
     bash_command='''
@@ -264,7 +321,7 @@ EOF
 verify_trino >> create_analytics_schema
 verify_postgres >> drop_postgres_tables
 
-create_analytics_schema >> dbt_deps >> dbt_debug >> dbt_run >> verify_dbt_results
+create_analytics_schema >> dbt_deps >> dbt_debug >> delete_s3_analytics >> dbt_run >> verify_dbt_results
 
 verify_dbt_results >> drop_postgres_tables >> [copy_customer_customizations, copy_product_customizations]
 
