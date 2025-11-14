@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: popular_customizations_per_customer
+    description: Aggregation of most popular customizations per customer and product
+    columns:
+      - name: customer_id
+        description: Customer identifier
+        tests:
+          - not_null
+      - name: product_id
+        description: Product identifier
+        tests:
+          - not_null
+      - name: customization
+        description: Customization identifier
+        tests:
+          - not_null
+      - name: customization_count
+        description: Count of how many times this customization was used
+
+  - name: popular_customizations_per_product
+    description: Aggregation of most popular customizations per product
+    columns:
+      - name: product_id
+        description: Product identifier
+        tests:
+          - not_null
+      - name: customization
+        description: Customization identifier
+        tests:
+          - not_null
+      - name: customization_count
+        description: Count of how many times this customization was used
+

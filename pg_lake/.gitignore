@@ -1,0 +1,38 @@
+# Environment variables
+.env
+
+# Airflow
+airflow/logs/
+airflow/**/__pycache__/
+airflow/**/*.pyc
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Docker
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+*.claude/

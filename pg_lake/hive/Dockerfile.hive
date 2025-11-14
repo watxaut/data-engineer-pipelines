@@ -1,0 +1,32 @@
+# Using official Apache Hive prebuilt image to avoid slow Maven downloads
+FROM apache/hive:4.0.0
+
+USER root
+
+# Install curl and postgresql client
+RUN apt-get update && apt-get install -y curl postgresql-client && rm -rf /var/lib/apt/lists/*
+
+# Download PostgreSQL JDBC driver
+RUN curl -L https://repo1.maven.org/maven2/org/postgresql/postgresql/42.6.0/postgresql-42.6.0.jar \
+    -o /opt/hive/lib/postgresql-42.6.0.jar
+
+# Download Hadoop AWS and AWS SDK JARs for S3 support (matching Hadoop 3.3.6 used in Hive 4.0.0)
+RUN curl -L https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.6/hadoop-aws-3.3.6.jar \
+    -o /opt/hive/lib/hadoop-aws-3.3.6.jar && \
+    curl -L https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+    -o /opt/hive/lib/aws-java-sdk-bundle-1.12.262.jar
+
+# Copy configuration files
+COPY metastore-site.xml /opt/hive/conf/
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create hive user and set permissions
+RUN groupadd -r hive --gid=1000 || true && \
+    useradd -r -g hive --uid=1000 -d /opt/hive hive || true && \
+    chown -R hive:hive /opt/hive /entrypoint.sh
+
+USER hive
+EXPOSE 9083
+
+ENTRYPOINT ["/entrypoint.sh"]
