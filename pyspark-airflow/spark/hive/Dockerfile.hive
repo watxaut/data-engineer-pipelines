@@ -1,30 +1,34 @@
-# Using official Apache Hive prebuilt image to avoid slow Maven downloads
-FROM apache/hive:4.0.0
+# source https://github.com/arempter/hive-metastore-docker
+FROM openjdk:8u242-jre
 
-USER root
+WORKDIR /opt
 
-# Download only the MySQL connector (much faster than building from scratch)
-RUN curl -L https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/8.0.33/mysql-connector-j-8.0.33.jar \
-    -o /opt/hive/lib/mysql-connector-j-8.0.33.jar
+ENV HADOOP_VERSION=3.2.0
+ENV METASTORE_VERSION=3.0.0
 
-# Copy configuration files
-COPY metastore-site.xml /opt/hive/conf/
+ENV HADOOP_HOME=/opt/hadoop-${HADOOP_VERSION}
+ENV HIVE_HOME=/opt/apache-hive-metastore-${METASTORE_VERSION}-bin
+
+RUN curl -L https://downloads.apache.org/hive/hive-standalone-metastore-${METASTORE_VERSION}/hive-standalone-metastore-${METASTORE_VERSION}-bin.tar.gz | tar zxf - && \
+    curl -L https://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz | tar zxf - && \
+    curl -L https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-8.0.19.tar.gz | tar zxf - && \
+    cp mysql-connector-java-8.0.19/mysql-connector-java-8.0.19.jar ${HIVE_HOME}/lib/ && \
+    rm -rf  mysql-connector-java-8.0.19
+
+RUN apt update && apt install net-tools
+
+COPY metastore-site.xml ${HIVE_HOME}/conf
 COPY entrypoint.sh /entrypoint.sh
-COPY metastore-log4j2.properties /opt/hive/conf/metastore-log4j2.properties
-RUN chmod +x /entrypoint.sh
 
-# Create hive user and set permissions
-RUN groupadd -r hive --gid=1000 || true && \
-    useradd -r -g hive --uid=1000 -d /opt/hive hive || true && \
-    chown -R hive:hive /opt/hive /entrypoint.sh
+RUN groupadd -r hive --gid=1000 && \
+    useradd -r -g hive --uid=1000 -d ${HIVE_HOME} hive && \
+    chown hive:hive -R ${HIVE_HOME} && \
+    chown hive:hive /entrypoint.sh && chmod +x /entrypoint.sh
+
+COPY metastore-log4j2.properties ${HIVE_HOME}/conf/metastore-log4j2.properties
 
 USER hive
 EXPOSE 9083
-
-# Health check using netstat (need to install net-tools first)
-USER root
-RUN microdnf install -y net-tools || yum install -y net-tools || apt-get update && apt-get install -y net-tools || true
-USER hive
 
 HEALTHCHECK \
  --interval=5s \
@@ -32,4 +36,4 @@ HEALTHCHECK \
  --timeout=10s \
  CMD netstat -an | grep 9083 > /dev/null; if [ 0 != $? ]; then exit 1; fi;
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["sh", "-c", "/entrypoint.sh"]
