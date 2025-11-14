@@ -58,17 +58,16 @@ services:
     networks:
       - reverse-etl-network
 
-  # MariaDB for Hive Metastore
-  mariadb:
-    image: mariadb:latest
-    container_name: mariadb
+  # PostgreSQL for Hive Metastore
+  hive-postgres:
+    image: postgres:15
+    container_name: hive-postgres
     environment:
-      MYSQL_ROOT_PASSWORD: admin
-      MYSQL_USER: admin
-      MYSQL_PASSWORD: admin
-      MYSQL_DATABASE: metastore_db
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+      POSTGRES_DB: metastore
     healthcheck:
-      test: ["CMD", "/usr/local/bin/healthcheck.sh", "--su=mysql", "--connect"]
+      test: ["CMD", "pg_isready", "-U", "hive"]
       interval: 10s
       timeout: 10s
       retries: 5
@@ -81,17 +80,19 @@ services:
       context: ./hive
       dockerfile: Dockerfile.hive
     container_name: hive-metastore
+    ports:
+      - "9083:9083"
     depends_on:
-      mariadb:
+      hive-postgres:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9083"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9083"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     networks:
       - reverse-etl-network
 
@@ -105,9 +106,12 @@ services:
       - ./trino/catalog:/etc/trino/catalog
       - ./trino/config.properties:/etc/trino/config.properties
     depends_on:
-      - iceberg-rest
-      - minio
-      - hive-metastore
+      iceberg-rest:
+        condition: service_started
+      minio:
+        condition: service_started
+      hive-metastore:
+        condition: service_healthy
     networks:
       - reverse-etl-network
 
@@ -219,6 +223,10 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+      AIRFLOW__WEBSERVER__WORKERS: 2
+      AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: 1800
+      AIRFLOW__WEBSERVER__WEB_SERVER_WORKER_TIMEOUT: 300
+      GUNICORN_CMD_ARGS: "--timeout 300 --graceful-timeout 300"
       TRINO_HOST: trino
       TRINO_PORT: 8080
       POSTGRES_HOST: postgres-pglake
@@ -240,20 +248,7 @@ services:
         condition: service_started
       postgres-pglake:
         condition: service_healthy
-    command: >
-      bash -c "
-      airflow db migrate &&
-      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin || true &&
-      airflow connections delete postgres_pglake || true &&
-      airflow connections add postgres_pglake \
-        --conn-type postgres \
-        --conn-host postgres-pglake \
-        --conn-schema analytics \
-        --conn-login postgres \
-        --conn-password postgres \
-        --conn-port 5432 &&
-      airflow webserver & airflow scheduler
-      "
+    entrypoint: ["/entrypoint.sh"]
     networks:
       - reverse-etl-network
 

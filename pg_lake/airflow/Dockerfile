@@ -30,3 +30,9 @@ ENV PATH="/home/airflow/.local/bin:${PATH}"
 
 WORKDIR /opt/airflow
 
+# Copy entrypoint script
+COPY --chown=airflow:root entrypoint.sh /entrypoint.sh
+USER root
+RUN chmod +x /entrypoint.sh
+USER airflow
+

@@ -150,12 +150,12 @@ conn = connect(
 cursor = conn.cursor()
 
 # Check popular_customizations_per_customer
-cursor.execute("SELECT COUNT(*) FROM iceberg.analytics.popular_customizations_per_customer")
+cursor.execute("SELECT COUNT(*) FROM hive.analytics.popular_customizations_per_customer")
 count1 = cursor.fetchone()[0]
 print(f"popular_customizations_per_customer count: {count1}")
 
 # Check popular_customizations_per_product
-cursor.execute("SELECT COUNT(*) FROM iceberg.analytics.popular_customizations_per_product")
+cursor.execute("SELECT COUNT(*) FROM hive.analytics.popular_customizations_per_product")
 count2 = cursor.fetchone()[0]
 print(f"popular_customizations_per_product count: {count2}")
 
@@ -194,7 +194,7 @@ copy_customer_customizations = PostgresOperator(
     CREATE SCHEMA IF NOT EXISTS iceberg;
     
     CREATE FOREIGN TABLE iceberg.popular_customizations_per_customer () SERVER pg_lake
-     OPTIONS (path 's3://warehouse/analytics/popular_customizations_per_customer/data/*.parquet');
+     OPTIONS (path 's3://warehouse/hive/analytics/popular_customizations_per_customer/*', format 'parquet');
 
     -- Create local table with data from foreign table
     CREATE TABLE popular_customizations_per_customer AS
@@ -218,7 +218,7 @@ copy_product_customizations = PostgresOperator(
     CREATE SCHEMA IF NOT EXISTS iceberg;
 
     CREATE FOREIGN TABLE iceberg.popular_customizations_per_product () SERVER pg_lake
-     OPTIONS (path 's3://warehouse/analytics/popular_customizations_per_product/data/*.parquet');
+     OPTIONS (path 's3://warehouse/hive/analytics/popular_customizations_per_product/*', format 'parquet');
     
     -- Create local table with data from foreign table
     CREATE TABLE popular_customizations_per_product AS

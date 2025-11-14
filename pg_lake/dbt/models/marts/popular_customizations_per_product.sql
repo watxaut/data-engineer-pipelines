@@ -10,6 +10,7 @@
     )
 }}
 
+-- TODO: you will need to manually drop the S3 location for it to work twice due to external_location existing
 -- Popular customizations per product
 -- Aggregation at product level and customization level
 WITH unnested_customizations AS (

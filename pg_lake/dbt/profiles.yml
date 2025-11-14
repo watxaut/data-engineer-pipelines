@@ -1,6 +1,6 @@
 reverse_etl:
   outputs:
-    dev:
+    production:
       type: trino
       method: none
       user: "{{ env_var('TRINO_USER', 'admin') }}"
@@ -10,5 +10,5 @@ reverse_etl:
       schema: analytics
       threads: 4
       http_scheme: http
-  target: dev
+  target: production
 
