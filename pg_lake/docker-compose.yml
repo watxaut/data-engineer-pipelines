@@ -58,6 +58,43 @@ services:
     networks:
       - reverse-etl-network
 
+  # MariaDB for Hive Metastore
+  mariadb:
+    image: mariadb:latest
+    container_name: mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+      MYSQL_DATABASE: metastore_db
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh", "--su=mysql", "--connect"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - reverse-etl-network
+
+  # Hive Metastore
+  hive-metastore:
+    build:
+      context: ./hive
+      dockerfile: Dockerfile.hive
+    container_name: hive-metastore
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9083"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - reverse-etl-network
+
   # Trino - Query engine
   trino:
     image: trinodb/trino:latest
@@ -70,6 +107,7 @@ services:
     depends_on:
       - iceberg-rest
       - minio
+      - hive-metastore
     networks:
       - reverse-etl-network
 

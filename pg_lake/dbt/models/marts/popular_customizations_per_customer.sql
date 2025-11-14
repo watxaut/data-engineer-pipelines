@@ -2,9 +2,11 @@
 {{
     config(
         materialized='table',
+        database='hive',
+        schema='analytics',
         properties={
             "format": "'PARQUET'",
-            "location": "'s3://warehouse/analytics/popular_customizations_per_customer'"
+            "external_location": "'s3://warehouse/hive/analytics/popular_customizations_per_customer'"
         }
     )
 }}

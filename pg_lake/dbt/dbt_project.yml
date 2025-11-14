@@ -20,6 +20,8 @@ models:
   reverse_etl:
     staging:
       +materialized: view
+      +database: iceberg
+      +schema: raw
     marts:
       +materialized: table
       +format: parquet
