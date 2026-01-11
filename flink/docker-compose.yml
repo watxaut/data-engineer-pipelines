@@ -1,0 +1,253 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # Data Generator (Python Socket Server)
+  # ============================================
+  data-generator:
+    build: ./data-generator
+    container_name: data-generator
+    ports:
+      - "9999:9999"
+    networks:
+      - flink-network
+    environment:
+      - EVENTS_PER_SECOND=100
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost', 9999)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Apache Flink
+  # ============================================
+  flink-jobmanager:
+    build: ./flink
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    networks:
+      - flink-network
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        state.backend: rocksdb
+        state.checkpoints.dir: s3://flink/checkpoints
+        state.savepoints.dir: s3://flink/savepoints
+        execution.checkpointing.interval: 60000
+        execution.checkpointing.mode: EXACTLY_ONCE
+        s3.endpoint: http://minio:9000
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
+        s3.path.style.access: true
+    volumes:
+      - ./flink/jobs:/opt/flink/jobs
+    depends_on:
+      - minio
+      - clickhouse
+
+  flink-taskmanager-1:
+    build: ./flink
+    container_name: flink-taskmanager-1
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    networks:
+      - flink-network
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        state.backend: rocksdb
+        s3.endpoint: http://minio:9000
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
+        s3.path.style.access: true
+    volumes:
+      - ./flink/jobs:/opt/flink/jobs
+
+  flink-taskmanager-2:
+    build: ./flink
+    container_name: flink-taskmanager-2
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    networks:
+      - flink-network
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 2
+        state.backend: rocksdb
+        s3.endpoint: http://minio:9000
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
+        s3.path.style.access: true
+    volumes:
+      - ./flink/jobs:/opt/flink/jobs
+
+  # ============================================
+  # ClickHouse (Real-time Sink)
+  # ============================================
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: clickhouse
+    ports:
+      - "8123:8123"  # HTTP interface
+      - "9000:9000"  # Native client
+    networks:
+      - flink-network
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./clickhouse/config:/etc/clickhouse-server/config.d
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # ============================================
+  # MinIO (S3-compatible storage)
+  # ============================================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9001:9001"  # Console
+      - "9002:9000"  # API
+    networks:
+      - flink-network
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - flink-network
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      mc mb myminio/flink || true;
+      mc mb myminio/iceberg || true;
+      mc mb myminio/warehouse || true;
+      echo 'MinIO buckets created successfully';
+      "
+
+  # ============================================
+  # Iceberg REST Catalog
+  # ============================================
+  iceberg-rest:
+    image: tabulario/iceberg-rest:0.6.0
+    container_name: iceberg-rest
+    ports:
+      - "8181:8181"
+    networks:
+      - flink-network
+    environment:
+      - CATALOG_WAREHOUSE=s3://warehouse/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+      - CATALOG_S3_ACCESS__KEY__ID=minioadmin
+      - CATALOG_S3_SECRET__ACCESS__KEY=minioadmin
+      - CATALOG_S3_PATH__STYLE__ACCESS=true
+    depends_on:
+      - minio
+
+  # ============================================
+  # Trino (Analytical Query Engine)
+  # ============================================
+  trino:
+    image: trinodb/trino:428
+    container_name: trino
+    ports:
+      - "8080:8080"
+    networks:
+      - flink-network
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog
+    depends_on:
+      - iceberg-rest
+      - minio
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v1/info"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ============================================
+  # Grafana (Real-time Dashboards)
+  # ============================================
+  grafana:
+    image: grafana/grafana:10.1.5
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - flink-network
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=clickhouse-clickhouse-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - clickhouse
+
+  # ============================================
+  # Superset (Analytical Dashboards)
+  # ============================================
+  superset:
+    image: apache/superset:3.0.0
+    container_name: superset
+    ports:
+      - "8088:8088"
+    networks:
+      - flink-network
+    environment:
+      - SUPERSET_SECRET_KEY=your-secret-key-change-this
+      - SUPERSET_LOAD_EXAMPLES=yes
+    volumes:
+      - superset-data:/app/superset_home
+    depends_on:
+      - trino
+    command: >
+      /bin/sh -c "
+      superset db upgrade &&
+      superset fab create-admin --username admin --firstname Admin --lastname User --email admin@superset.com --password admin &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088 --with-threads --reload --debugger
+      "
+
+networks:
+  flink-network:
+    driver: bridge
+
+volumes:
+  clickhouse-data:
+  minio-data:
+  grafana-data:
+  superset-data:
